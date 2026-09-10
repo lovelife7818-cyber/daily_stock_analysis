@@ -1,0 +1,47 @@
+name: Keepalive 保活
+
+# 背景：GitHub 会在仓库连续 60 天没有提交时，自动禁用该仓库下所有 schedule 定时任务。
+# 而且是静默禁用——不发通知，页面上只是不再运行，很容易被误判为"最近没信号"。
+# 本任务每周提交一次时间戳，把 60 天计时器重置，保证「每日股票分析」永不被自动停用。
+#
+# 触发：每周一 UTC 03:00（北京时间 11:00）。也可在 Actions 页面手动运行。
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+
+      - name: 写入心跳时间戳
+        run: |
+          mkdir -p .keepalive
+          TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S %Z' > .keepalive/last-beat.txt
+          echo "本次心跳：$(cat .keepalive/last-beat.txt)"
+
+      - name: 提交（重置 60 天计时器）
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .keepalive/last-beat.txt
+          if git diff --staged --quiet; then
+            echo "内容无变化，跳过提交"
+          else
+            git commit -m "chore(keepalive): 保活 $(TZ='Asia/Shanghai' date '+%Y-%m-%d')"
+            git push
+            echo "已提交，60 天计时器已重置"
+          fi
