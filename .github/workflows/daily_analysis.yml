@@ -341,14 +341,32 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          RUNDATE=$(TZ='Asia/Shanghai' date '+%Y-%m-%d')
+          RUNURL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           SRC=$(ls -t reports/report_*.md 2>/dev/null | head -1)
-          if [ -z "$SRC" ]; then
-            echo "无报告文件，跳过 Issue 通知"
-            exit 0
+          MARKET=$(ls -t reports/market_review_*.md 2>/dev/null | head -1)
+          if [ -n "$SRC" ]; then
+            echo "使用个股报告: $SRC"
+            export MARKET_REVIEW_FILE="$MARKET"
+            python scripts/issue_digest.py "$SRC" /tmp/issue_body.md "${{ github.run_number }}"
+            TITLE="自选股速览 $RUNDATE"
+          elif [ -n "$MARKET" ]; then
+            echo "没有个股报告，仅发大盘复盘兜底"
+            {
+              echo "## 今日未生成个股报告"
+              echo ""
+              echo "个股分析全部失败，通常是 AI 接口配额/限流导致。运行日志: $RUNURL"
+              echo ""
+              cat "$MARKET"
+            } > /tmp/issue_body.md
+            TITLE="今日无个股报告 $RUNDATE"
+          else
+            echo "没有任何报告产出"
+            {
+              echo "## 今日分析未产出任何报告"
+              echo ""
+              echo "运行日志: $RUNURL"
+            } > /tmp/issue_body.md
+            TITLE="今日分析失败 $RUNDATE"
           fi
-          export MARKET_REVIEW_FILE=$(ls -t reports/market_review_*.md 2>/dev/null | head -1)
-          echo "使用报告: $SRC"
-          python scripts/issue_digest.py "$SRC" /tmp/issue_body.md "${{ github.run_number }}"
-          gh issue create --repo "$GITHUB_REPOSITORY" \
-            --title "自选股速览 $(TZ='Asia/Shanghai' date '+%Y-%m-%d')" \
-            --body-file /tmp/issue_body.md
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file /tmp/issue_body.md
