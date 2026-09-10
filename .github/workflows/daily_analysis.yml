@@ -335,3 +335,31 @@ jobs:
             echo "📜 最近日志（最后 30 行）:"
             tail -30 logs/stock_analysis_*.log 2>/dev/null || echo "无日志"
           fi
+
+      - name: 发布报告到 Issue（通知兜底）
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ ! -d reports ] || [ -z "$(ls -A reports 2>/dev/null)" ]; then
+            echo "无报告文件，跳过 Issue 通知"
+            exit 0
+          fi
+          DAY=$(TZ='Asia/Shanghai' date '+%Y-%m-%d')
+          SRC=$(ls -t reports/report_*.md 2>/dev/null | head -1)
+          if [ -z "$SRC" ]; then
+            SRC=$(ls -t reports/market_review_*.md 2>/dev/null | head -1)
+          fi
+          if [ -z "$SRC" ]; then
+            echo "未找到报告文件，跳过"
+            exit 0
+          fi
+          echo "使用报告: $SRC"
+          {
+            echo "> 由 GitHub Actions 自动生成 | 运行 #${{ github.run_number }}"
+            echo "> 完整报告与日志见本次运行的 Artifacts: analysis-reports-${{ github.run_number }}"
+            echo ""
+            cat "$SRC"
+          } | iconv -f UTF-8 -t UTF-8 -c | head -c 60000 > /tmp/issue_body.md
+          printf '\n' >> /tmp/issue_body.md
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "股票分析报告 $DAY" --body-file /tmp/issue_body.md
