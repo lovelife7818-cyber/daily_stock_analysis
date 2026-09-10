@@ -273,6 +273,31 @@ jobs:
             echo "⚡ 已启用强制运行模式（跳过交易日检查）"
           fi
 
+          # ---- 清洗邮箱配置中的不可见字符 ----
+          # 背景：run #49 日志报错 'ascii' codec can't encode character '\xa0'
+          # 说明 EMAIL_PASSWORD / EMAIL_SENDER / EMAIL_RECEIVERS 里混入了
+          # 不间断空格(U+00A0)等不可见字符，导致 SMTP 登录/发信失败。
+          # 这里在调用 main.py 前统一清洗，无需用户重设密钥。
+          clean_val() {
+            V="$1" python3 -c "import os,re;print(re.sub('[\s\u00a0\u200b\u200c\u200d\ufeff]+','',os.environ['V']),end='')"
+          }
+          if [ -n "$EMAIL_PASSWORD" ]; then
+            _old_len=${#EMAIL_PASSWORD}
+            export EMAIL_PASSWORD="$(clean_val "$EMAIL_PASSWORD")"
+            echo "[清洗] EMAIL_PASSWORD: ${_old_len} 字符 -> ${#EMAIL_PASSWORD} 字符"
+          fi
+          if [ -n "$EMAIL_SENDER" ]; then
+            _old_len=${#EMAIL_SENDER}
+            export EMAIL_SENDER="$(clean_val "$EMAIL_SENDER")"
+            echo "[清洗] EMAIL_SENDER: ${_old_len} -> ${#EMAIL_SENDER}  (${EMAIL_SENDER})"
+          fi
+          if [ -n "$EMAIL_RECEIVERS" ]; then
+            _old_len=${#EMAIL_RECEIVERS}
+            export EMAIL_RECEIVERS="$(clean_val "$EMAIL_RECEIVERS")"
+            echo "[清洗] EMAIL_RECEIVERS: ${_old_len} -> ${#EMAIL_RECEIVERS}"
+          fi
+          echo "[清洗] 收件人: $EMAIL_RECEIVERS"
+
           # 执行分析
           if [ "$MODE" = "market-only" ]; then
             python main.py --market-review $FORCE_RUN_ARG
