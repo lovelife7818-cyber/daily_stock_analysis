@@ -68,3 +68,21 @@ jobs:
               --title "$TITLE $(TZ=Asia/Shanghai date '+%Y-%m-%d')" --body "$BODY"
             echo "已开新的告警 Issue"
           fi
+
+      - name: 自动归档 7 天前的旧报告
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          CUT=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          LIST=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 \
+                   --json number,title,createdAt \
+                   --jq ".[] | select(.title | startswith(\"⚠️\") | not) | select(.createdAt < \"$CUT\") | .number")
+          if [ -z "$LIST" ]; then
+            echo "没有超过 7 天的旧报告需要归档"
+            exit 0
+          fi
+          for n in $LIST; do
+            gh issue close "$n" --repo "$GITHUB_REPOSITORY" && echo "  已归档 #$n"
+          done
