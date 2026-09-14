@@ -342,6 +342,13 @@ jobs:
             tail -30 logs/stock_analysis_*.log 2>/dev/null || echo "无日志"
           fi
 
+      - name: 生成经济数据段落
+        if: always()
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEYS }}
+        run: python scripts/econ_digest.py
+
       - name: 发布报告到 Issue（速览 + 折叠全文）
         if: always()
         env:
@@ -375,4 +382,5 @@ jobs:
             } > /tmp/issue_body.md
             TITLE="今日分析失败 $RUNDATE"
           fi
+          python scripts/splice_econ.py /tmp/issue_body.md /tmp/econ.md || true
           gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file /tmp/issue_body.md
