@@ -1,0 +1,70 @@
+name: 看门狗 · 日报有没有按时出来
+
+# 日报预期在 UTC 12:35（北京 20:35）产出。
+# 本任务在 UTC 21:12 检查「过去 16 小时内有没有产生 Issue」。
+# 16 小时窗口 = 能容忍日报延迟最多约 8.5 小时（GitHub 调度延迟实测可达 4 小时）。
+# 没找到 → 开一个告警 Issue，仓库订阅者会收到邮件。
+
+on:
+  schedule:
+    - cron: '12 21 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      force_alert:
+        description: '强制走一遍告警分支（用于验证链路）'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检查并告警
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE: ${{ github.event.inputs.force_alert }}
+        run: |
+          set -euo pipefail
+          CUTOFF=$(date -u -d '16 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          N=$(gh issue list --repo "$GITHUB_REPOSITORY" --state all --limit 40 \
+                --json createdAt --jq "[.[] | select(.createdAt >= \"$CUTOFF\")] | length")
+          echo "过去 16 小时（自 $CUTOFF）产生的 Issue 数：$N"
+          if [ "${FORCE:-false}" = "true" ]; then
+            echo "⚠️ force_alert 开启，强制走告警分支"
+            N=0
+          fi
+          if [ "$N" -gt 0 ]; then
+            echo "✅ 报告已产出，一切正常。"
+            exit 0
+          fi
+          NOW_BJ=$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M')
+          RUNURL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/workflows/daily_analysis.yml"
+          TITLE="⚠️ 日报未产出"
+          BODY=$(cat <<EOF
+          ## 日报没有按时出来
+
+          - 预期：北京时间 20:35（UTC 12:35）
+          - 检查时间：北京时间 ${NOW_BJ}
+          - 已等待超过 8.5 小时
+
+          可能原因：GitHub 调度延迟或丢单、工作流失败、AI 接口配额耗尽。
+
+          排查入口：${RUNURL}
+
+          查完后关掉这个 Issue。
+          EOF
+          )
+          EXIST=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 50 \
+                   --json number,title --jq "[.[] | select(.title | startswith(\"$TITLE\"))] | .[0].number // empty")
+          if [ -n "$EXIST" ]; then
+            gh issue comment "$EXIST" --repo "$GITHUB_REPOSITORY" --body "$BODY"
+            echo "已在既有告警 Issue #$EXIST 追加记录"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --title "$TITLE $(TZ=Asia/Shanghai date '+%Y-%m-%d')" --body "$BODY"
+            echo "已开新的告警 Issue"
+          fi
