@@ -1,8 +1,11 @@
 name: 看门狗 · 日报有没有按时出来
 
 # 日报预期在 UTC 12:35（北京 20:35）产出。
-# 本任务在 UTC 21:12 检查「过去 16 小时内有没有产生 Issue」。
-# 16 小时窗口 = 能容忍日报延迟最多约 8.5 小时（GitHub 调度延迟实测可达 4 小时）。
+# 本任务在 UTC 21:12 检查过去 24 小时内有没有「速览」Issue。
+#
+# 【2026-09-22 修】原版判据是「16 小时内有没有任何 Issue」，过于宽泛且依赖时间窗口。
+#   改为直接认日报标题（含「速览」）+ 24 小时窗口：既覆盖当日日报，
+#   又不会把前一天那份错算进来。与另外两个看门狗统一逻辑。
 # 没找到 → 开一个告警 Issue，仓库订阅者会收到邮件。
 
 on:
@@ -29,10 +32,11 @@ jobs:
           FORCE: ${{ github.event.inputs.force_alert }}
         run: |
           set -euo pipefail
-          CUTOFF=$(date -u -d '16 hours ago' +%Y-%m-%dT%H:%M:%SZ)
-          N=$(gh issue list --repo "$GITHUB_REPOSITORY" --state all --limit 40 \
-                --json createdAt --jq "[.[] | select(.createdAt >= \"$CUTOFF\")] | length")
-          echo "过去 16 小时（自 $CUTOFF）产生的 Issue 数：$N"
+          CUTOFF=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          N=$(gh issue list --repo "$GITHUB_REPOSITORY" --state all --limit 60 \
+                --json title,createdAt \
+                --jq "[.[] | select(.createdAt >= \"$CUTOFF\") | select(.title | contains(\"速览\")) | select((.title | contains(\"未产出\")) | not)] | length")
+          echo "过去 24 小时（自 $CUTOFF）内的「速览」Issue 数：$N"
           if [ "${FORCE:-false}" = "true" ]; then
             echo "⚠️ force_alert 开启，强制走告警分支"
             N=0
@@ -49,7 +53,7 @@ jobs:
 
           - 预期：北京时间 20:35（UTC 12:35）
           - 检查时间：北京时间 ${NOW_BJ}
-          - 已等待超过 8.5 小时
+          - 已等待超过 12 小时
 
           可能原因：GitHub 调度延迟或丢单、工作流失败、AI 接口配额耗尽。
 
