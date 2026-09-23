@@ -72,21 +72,10 @@ jobs:
               --title "$TITLE $(TZ=Asia/Shanghai date '+%Y-%m-%d')" --body "$BODY"
             echo "已开新的告警 Issue"
           fi
-
-      - name: 自动归档 7 天前的旧报告
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          CUT=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
-          LIST=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 \
-                   --json number,title,createdAt \
-                   --jq ".[] | select(.title | startswith(\"⚠️\") | not) | select(.createdAt < \"$CUT\") | .number")
-          if [ -z "$LIST" ]; then
-            echo "没有超过 7 天的旧报告需要归档"
-            exit 0
-          fi
-          for n in $LIST; do
-            gh issue close "$n" --repo "$GITHUB_REPOSITORY" && echo "  已归档 #$n"
-          done
+# ---------------------------------------------------------------------------
+# 【2026-09-23 移除】原「自动归档 7 天前的旧报告/旧信号」步骤已删除。
+# 原因：GitHub 每关闭一个 Issue，都会给仓库订阅者发一封「Closed」通知邮件
+#       （龙哥 9/19 以来因此多收了 24 封垃圾邮件，其中 9/21 一天 20 封）。
+# 影响：旧 Issue 会保持 open 状态堆积，但不影响任何功能
+#       —— 告警检查、报告推送、去重逻辑都不依赖归档。
+# ---------------------------------------------------------------------------
