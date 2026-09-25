@@ -126,12 +126,14 @@ class MarketAnalyzer:
         self.strategy = get_market_strategy_blueprint(self.region)
 
     def _get_review_language(self) -> str:
-        configured = normalize_report_language(
+        # 【本地修改 2026-09-26】上游原版在此写死 `if self.region == "us": return "en"`，
+        # 导致美股大盘复盘无论 REPORT_LANGUAGE 设成什么都强制输出英文。
+        # 现改为统一遵循 REPORT_LANGUAGE（默认 zh），使「美股行情 + 中文解读」成立。
+        # 其余依赖 region 的逻辑（指数名、成交额单位、涨跌家数提示等）本就按 language 分支，
+        # 中文路径已存在（如「十亿美元」「美股暂无涨跌家数等统计」），不受影响。
+        return normalize_report_language(
             getattr(getattr(self, "config", None), "report_language", "zh")
         )
-        if self.region == "us":
-            return "en"
-        return configured
 
     def _get_template_review_language(self) -> str:
         return normalize_report_language(
