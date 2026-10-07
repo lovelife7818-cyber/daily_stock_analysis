@@ -44,7 +44,7 @@ from src.report_language import (
     normalize_report_language,
 )
 from src.schemas.report_schema import AnalysisReportSchema
-from src.market_context import get_market_role, get_market_guidelines
+from src.market_context import get_market_role, get_market_guidelines, localize_prompt_currency
 
 logger = logging.getLogger(__name__)
 
@@ -906,6 +906,11 @@ class GeminiAnalyzer:
                 .replace("{default_skill_policy_section}", default_skill_policy_section)
                 .replace("{skills_section}", skills_section)
             )
+        # 【2026-10-08】按市场本地化货币单位。
+        # 上游 system prompt 模板里的 JSON schema 示例写死了「XX元」（A 股口径），
+        # LLM 会照抄该单位，导致美股报告出现「160.50元」。此处按市场替换为「美元」。
+        base_prompt = localize_prompt_currency(base_prompt, stock_code, lang)
+
         if lang == "en":
             return base_prompt + """
 
@@ -1780,7 +1785,10 @@ class GeminiAnalyzer:
 - 当数据缺失时，请使用中文直接说明“{no_data_text}，无法判断”。
 """
         
-        return prompt
+        # 【2026-10-08】按市场本地化货币单位。
+        # 上方行情表格用的是 A 股口径「元」（如「收盘价 | 355.44 元」），
+        # 若不替换，LLM 会输出错误单位。
+        return localize_prompt_currency(prompt, code, report_language)
     
     def _format_volume(self, volume: Optional[float]) -> str:
         """格式化成交量显示"""

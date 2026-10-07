@@ -122,3 +122,41 @@ def get_market_guidelines(stock_code: Optional[str], lang: str = "zh") -> str:
     market = detect_market(stock_code)
     lang_key = "en" if lang == "en" else "zh"
     return _MARKET_GUIDELINES.get(market, _MARKET_GUIDELINES["cn"])[lang_key]
+
+
+# ---------------------------------------------------------------------------
+# Market-specific currency units
+# 【2026-10-08 新增】上游项目源自 A 股系统，analyzer.py 的 system prompt 模板
+# 与行情表格里硬编码了「元」。分析美股/港股时，LLM 会照抄示例输出
+# 「160.50元」这类错误单位（实测 2026-10-07 报告出现 32 处「元」、0 处「$」）。
+# 货币单位必须按市场切换。
+# ---------------------------------------------------------------------------
+
+_MARKET_CURRENCY = {
+    "cn": {"zh": "元", "en": "CNY"},
+    "hk": {"zh": "港元", "en": "HKD"},
+    "us": {"zh": "美元", "en": "USD"},
+}
+
+
+def get_market_currency_unit(stock_code: Optional[str], lang: str = "zh") -> str:
+    """Return the price currency unit name for the given market."""
+    market = detect_market(stock_code)
+    lang_key = "en" if lang == "en" else "zh"
+    return _MARKET_CURRENCY.get(market, _MARKET_CURRENCY["cn"])[lang_key]
+
+
+def localize_prompt_currency(prompt: str, stock_code: Optional[str], lang: str = "zh") -> str:
+    """Replace A-share currency wording inside a prompt with the market's own unit.
+
+    A-share prompts ("元") pass through untouched, so this is safe for existing use.
+    Covers the three shapes found in the upstream templates:
+      - 亿元 / 万元      amount magnitude wording
+      - XX元             JSON-schema placeholders in the system prompts
+      - 355.44 元        rendered quote tables in the user prompt
+    """
+    unit = get_market_currency_unit(stock_code, lang)
+    if not prompt or unit == "元":
+        return prompt
+    out = prompt.replace("亿元", "亿" + unit).replace("万元", "万" + unit)
+    return re.sub(r"(?<=[\dX%])(\s*)元", "\\1" + unit, out)
